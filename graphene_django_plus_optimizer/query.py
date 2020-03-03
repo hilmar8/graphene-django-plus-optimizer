@@ -1,13 +1,15 @@
 import functools
+import warnings
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import ForeignKey, Prefetch
 from django.db.models.constants import LOOKUP_SEP
 from django.db.models.fields.reverse_related import ManyToOneRel
-from graphene import InputObjectType
+from graphene import InputObjectType, GlobalID
 from graphene.types.generic import GenericScalar
 from graphene.types.resolver import default_resolver
 from graphene_django import DjangoObjectType
+from graphene_django.fields import DjangoListField
 from graphql import ResolveInfo
 from graphql.execution.base import (
     get_field_def,
@@ -53,6 +55,9 @@ class QueryOptimizer(object):
         self.root_info = info
         self.disable_abort_only = options.pop('disable_abort_only', False)
         self.parent_id_field = options.pop('parent_id_field', None)
+
+        # Used if overriding resolve_id.
+        self.id_field = options.get('id_field', 'id')
 
     def optimize(self, queryset):
         info = self.root_info
@@ -158,7 +163,7 @@ class QueryOptimizer(object):
                             try:
                                 from django.db.models import DEFERRED  # noqa: F401
                             except ImportError:
-                                store.abort_only_optimization()
+                                store.abort_only_optimization(name)
                         else:
                             model = getattr(graphene_type._meta, 'model', None)
                             if model and name not in optimized_fields_by_model:
@@ -170,20 +175,47 @@ class QueryOptimizer(object):
                                         selection,
                                         selection_field_def,
                                         possible_type,
+                                        name
                                     )
         return store
 
-    def _optimize_field(self, store, model, selection, field_def, parent_type):
-        optimized_by_name = self._optimize_field_by_name(
+    def _optimize_field(self, store, model, selection, field_def, parent_type, name):
+        optimized_by_directive = self._optimize_field_by_directives(
             store, model, selection, field_def)
+
+        if optimized_by_directive:
+            return
+
+        optimized_by_name = self._optimize_field_by_name(
+            store, model, selection, field_def, parent_type)
         optimized_by_hints = self._optimize_field_by_hints(
             store, selection, field_def, parent_type)
         optimized = optimized_by_name or optimized_by_hints
         if not optimized:
-            store.abort_only_optimization()
+            store.abort_only_optimization(name)
 
-    def _optimize_field_by_name(self, store, model, selection, field_def):
-        name = self._get_name_from_resolver(field_def.resolver)
+    def _optimize_field_by_directives(self, store, model, selection, field_def):
+        variable_values = self.root_info.variable_values
+
+        for directive in selection.directives:
+            args = {}
+            for arg in directive.arguments:
+                if isinstance(arg.value, Variable):
+                    var_name = arg.value.name.value
+                    value = variable_values.get(var_name)
+                else:
+                    value = arg.value.value
+                args[arg.name.value] = value
+
+            if directive.name.value == 'include':
+                return not args.get('if', True)
+            elif directive.name.value == 'skip':
+                return args.get('if', False)
+
+        return False
+
+    def _optimize_field_by_name(self, store, model, selection, field_def, parent_type):
+        name = self._get_name_from_resolver(field_def.resolver, parent_type)
         if not name:
             return False
         model_field = self._get_model_field_from_name(model, name)
@@ -193,12 +225,16 @@ class QueryOptimizer(object):
             store.only(name)
             return True
         if model_field.many_to_one or model_field.one_to_one:
+            field_def_type = self._get_type(field_def)
             field_store = self._optimize_gql_selections(
-                self._get_type(field_def),
+                field_def_type,
                 selection,
                 # parent_type,
             )
-            store.select_related(name, field_store, model_field=model_field)
+            id_field = None
+            if hasattr(field_def_type, 'graphene_type') and hasattr(field_def_type.graphene_type._meta, 'id_field'):
+                id_field = field_def_type.graphene_type._meta.id_field
+            store.select_related(name, field_store, model_field=model_field, id_field=id_field)
             return True
         if model_field.one_to_many or model_field.many_to_many:
             field_store = self._optimize_gql_selections(
@@ -219,7 +255,12 @@ class QueryOptimizer(object):
         return False
 
     def _get_optimization_hints(self, resolver):
-        return getattr(resolver, 'optimization_hints', None)
+        resolver_fn = resolver
+        if isinstance(resolver, functools.partial):
+            if resolver.func == DjangoListField.list_resolver:
+                resolver_fn = resolver.args[1]
+
+        return getattr(resolver_fn, 'optimization_hints', None)
 
     def _get_value(self, info, value):
         if isinstance(value, Variable):
@@ -229,7 +270,7 @@ class QueryOptimizer(object):
             return value.__dict__
         else:
             return GenericScalar.parse_literal(value)
-        return value
+        # return value
 
     def _optimize_field_by_hints(self, store, selection, field_def, parent_type):
         optimization_hints = self._get_optimization_hints(field_def.resolver)
@@ -276,14 +317,17 @@ class QueryOptimizer(object):
             else:
                 target += source
 
-    def _get_name_from_resolver(self, resolver):
+    def _get_name_from_resolver(self, resolver, parent_type):
         optimization_hints = self._get_optimization_hints(resolver)
         if optimization_hints:
             name = optimization_hints.model_field
             if name:
                 return name
         if self._is_resolver_for_id_field(resolver):
-            return 'id'
+            if hasattr(parent_type, 'graphene_type') and hasattr(parent_type.graphene_type._meta, 'id_field'):
+                return parent_type.graphene_type._meta.id_field
+
+            return self.id_field
         elif isinstance(resolver, functools.partial):
             resolver_fn = resolver
             if resolver_fn.func != default_resolver:
@@ -297,6 +341,20 @@ class QueryOptimizer(object):
         # For python 2 unbound method:
         if hasattr(resolve_id, 'im_func'):
             resolve_id = resolve_id.im_func
+
+        if isinstance(resolver, functools.partial):
+            resolver_fn = resolver
+
+            if resolver_fn.func == GlobalID.id_resolver:
+                # This would return False if resolve_id is overriden
+                # by the Type. Instead check for the name of the
+                # function for safety.
+                # if resolver_fn.args:
+                #     return resolver_fn.args[0] == resolve_id
+
+                if resolver_fn.args:
+                    return resolver_fn.args[0].__name__ == 'resolve_id'
+
         return resolver == resolve_id
 
     def _get_model_field_from_name(self, model, name):
@@ -339,31 +397,38 @@ class QueryOptimizerStore():
         self.only_list = []
         self.disable_abort_only = disable_abort_only
 
-    def select_related(self, name, store, model_field=None):
+    def select_related(self, name, store, model_field=None, id_field=None):
         if store.annotate_dict:
             self.only(model_field.attname)
-            self.prefetch_related(name, store, model_field.related_model.objects.all())
+            self.prefetch_related(name, store, model_field.related_model.objects.all(), id_field=id_field)
         else:
             if store.select_list:
                 for select in store.select_list:
                     self.select_list.append(name + LOOKUP_SEP + select)
             else:
                 self.select_list.append(name)
-        for prefetch in store.prefetch_list:
-            if isinstance(prefetch, Prefetch):
-                prefetch.add_prefix(name)
-            else:
-                prefetch = name + LOOKUP_SEP + prefetch
-            self.prefetch_list.append(prefetch)
-        if self.only_list is not None:
-            if store.only_list is None:
-                self.abort_only_optimization()
-            else:
-                for only in store.only_list:
-                    self.only_list.append(name + LOOKUP_SEP + only)
+            for prefetch in store.prefetch_list:
+                if isinstance(prefetch, Prefetch):
+                    prefetch.add_prefix(name)
+                else:
+                    prefetch = name + LOOKUP_SEP + prefetch
+                self.prefetch_list.append(prefetch)
+            if self.only_list is not None:
+                if store.only_list is None:
+                    self.abort_only_optimization(name)
+                else:
+                    if id_field and id_field != "pk":
+                        self.only_list.append(name + LOOKUP_SEP + id_field)
+                    for only in store.only_list:
+                        self.only_list.append(name + LOOKUP_SEP + only)
 
-    def prefetch_related(self, name, store, queryset):
+    def prefetch_related(self, name, store, queryset, attname=None, id_field=None):
         if store.select_list or store.only_list:
+            if attname and store.only_list:
+                store.only_list.append(attname)
+            if id_field and store.only_list and id_field != "pk":
+                store.only_list.append(id_field)
+
             queryset = store.optimize_queryset(queryset)
             self.prefetch_list.append(Prefetch(name, queryset=queryset))
         elif store.prefetch_list:
@@ -380,9 +445,10 @@ class QueryOptimizerStore():
         if self.only_list is not None:
             self.only_list.append(field)
 
-    def abort_only_optimization(self):
+    def abort_only_optimization(self, field=None):
         if not self.disable_abort_only:
             self.only_list = None
+            warnings.warn("Query optimization aborted, could not optimize field: {}.".format(field), UserWarning)
 
     def optimize_queryset(self, queryset):
         if self.select_list:

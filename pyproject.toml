@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "graphene-django-plus-optimizer"
+version = "0.0.1"
+description = "Custom modifications that I've done to graphene-django-optimizer to make it work better for me"
+authors = ["Hilmar Ævar Hilmarsson <hilmarh@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "~3.7"
+
+[tool.poetry.dev-dependencies]
+django = "3.0.3"
+djangorestframework = "3.11.0"
+graphene = "2.1.8"
+graphene-django = "2.8.2"
+pytest = "^5.3.5"
+pytest-django = "^3.8.0"
+black = "^19.10b0"
+django-filter = "^2.2.0"
+coverage = "^5.0.3"
+flake8 = "^3.7.9"
+pytest-cov = "^2.8.1"
+mock = "^4.0.1"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"

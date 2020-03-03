@@ -3,8 +3,8 @@ from django.db.models import Prefetch, Count, Value, F, CharField
 from django.db.models.functions import Concat
 from graphene import ConnectionField
 from graphene_django.fields import DjangoConnectionField
-import graphene_django_optimizer as gql_optimizer
-from graphene_django_optimizer import OptimizedDjangoObjectType
+import graphene_django_plus_optimizer as gql_optimizer
+from graphene_django_plus_optimizer import OptimizedDjangoObjectType
 
 from .models import (
     DetailedItem,

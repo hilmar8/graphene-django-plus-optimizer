@@ -1,2 +1,0 @@
--r dev-env-requirements.txt
-django==2.2.4

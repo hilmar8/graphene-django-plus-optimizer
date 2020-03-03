@@ -1,5 +1,0 @@
-[run]
-source=graphene_django_optimizer
-
-[report]
-precision = 2

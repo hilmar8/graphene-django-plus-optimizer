@@ -8,7 +8,7 @@ from .schema import schema, SomeOtherItemType, DummyItemMutation
 
 
 @pytest.mark.django_db
-@patch('graphene_django_optimizer.types.query',
+@patch('graphene_django_plus_optimizer.types.query',
        return_value=SomeOtherItem.objects)
 def test_should_optimize_the_single_node(mocked_optimizer):
     SomeOtherItem.objects.create(pk=7, name='Hello')
@@ -35,7 +35,7 @@ def test_should_optimize_the_single_node(mocked_optimizer):
 
 
 @pytest.mark.django_db
-@patch('graphene_django_optimizer.types.query')
+@patch('graphene_django_plus_optimizer.types.query')
 def test_should_return_none_when_node_is_not_resolved(mocked_optimizer):
     SomeOtherItem.objects.create(id=7)
 
@@ -61,7 +61,7 @@ def test_should_return_none_when_node_is_not_resolved(mocked_optimizer):
 
 
 @pytest.mark.django_db
-@patch('graphene_django_optimizer.types.query')
+@patch('graphene_django_plus_optimizer.types.query')
 def test_mutating_should_not_optimize(mocked_optimizer):
     Item.objects.create(id=7)
 

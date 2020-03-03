@@ -1,7 +1,7 @@
 import pytest
 from django.db.models import Count, Prefetch
 
-import graphene_django_optimizer as gql_optimizer
+import graphene_django_plus_optimizer as gql_optimizer
 
 from .graphql_utils import create_resolve_info
 from .models import (
