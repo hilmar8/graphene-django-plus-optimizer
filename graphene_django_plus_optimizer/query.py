@@ -330,8 +330,6 @@ class QueryOptimizer(object):
             return self.id_field
         elif isinstance(resolver, functools.partial):
             resolver_fn = resolver
-            if resolver.func == DjangoListField.list_resolver:
-                resolver_fn = resolver.args[1]
             if resolver_fn.func != default_resolver:
                 # Some resolvers have the partial function as the second
                 # argument.
