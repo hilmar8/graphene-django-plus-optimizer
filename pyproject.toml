@@ -22,6 +22,7 @@ coverage = "^5.0.3"
 flake8 = "^3.7.9"
 pytest-cov = "^2.8.1"
 mock = "^4.0.1"
+graphene-django-plus = {git = "https://github.com/hilmarh/graphene-django-plus.git", rev = "20b375a266a907562f2b2758293204a27dc05bbb"}
 
 [build-system]
 requires = ["poetry>=0.12"]

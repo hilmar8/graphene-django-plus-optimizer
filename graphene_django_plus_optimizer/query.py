@@ -10,6 +10,9 @@ from graphene.types.generic import GenericScalar
 from graphene.types.resolver import default_resolver
 from graphene_django import DjangoObjectType
 from graphene_django.fields import DjangoListField
+
+from graphene_django_plus.fields import DjangoListField, PlusListField, DjangoPlusListField
+
 from graphql import ResolveInfo
 from graphql.execution.base import (
     get_field_def,
@@ -263,13 +266,10 @@ class QueryOptimizer(object):
     def _get_optimization_hints(self, resolver):
         resolver_fn = resolver
         if isinstance(resolver, functools.partial):
-            if resolver_fn.func != default_resolver:
-                # Some resolvers have the partial function as the second
-                # argument.
-                for arg in resolver_fn.args:
-                    if isinstance(arg, (str, functools.partial)):
-                        resolver_fn = arg
-                        break
+            if resolver.func == DjangoListField.list_resolver or resolver.func == DjangoPlusListField.list_resolver:
+                resolver_fn = resolver.args[1]
+            elif resolver.func == PlusListField.list_resolver:
+                resolver_fn = resolver.args[0]
 
         return getattr(resolver_fn, 'optimization_hints', None)
 
