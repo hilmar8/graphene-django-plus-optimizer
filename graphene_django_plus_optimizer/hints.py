@@ -18,6 +18,7 @@ class OptimizationHints(object):
         prefetch_related=noop,
         only=noop,
         annotate=noop,
+        ignore=False,
         apply_prefetch_related=True,
     ):
         self.model_field = model_field
@@ -25,4 +26,5 @@ class OptimizationHints(object):
         self.select_related = _normalize_hint_value(select_related)
         self.only = _normalize_hint_value(only)
         self.annotate = _normalize_hint_value(annotate)
+        self.ignore = ignore
         self.apply_prefetch_related = apply_prefetch_related

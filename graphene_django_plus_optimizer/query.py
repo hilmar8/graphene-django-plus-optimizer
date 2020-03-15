@@ -219,9 +219,11 @@ class QueryOptimizer(object):
         return False
 
     def _optimize_field_by_name(self, store, model, selection, field_def, parent_type):
-        name = self._get_name_from_resolver(field_def.resolver, parent_type)
+        name, ignore = self._get_name_from_resolver(field_def.resolver, parent_type)
         if not name:
             return False
+        if ignore:
+            return True
         model_field = self._get_model_field_from_name(model, name)
         if not model_field:
             return False
@@ -301,6 +303,7 @@ class QueryOptimizer(object):
         self._add_optimization_hints(
             optimization_hints.prefetch_related(info, *args),
             store.prefetch_list,
+            store.prefetch_not_applied,
             optimization_hints.apply_prefetch_related,
         )
         self._add_optimization_hints(
@@ -314,28 +317,33 @@ class QueryOptimizer(object):
             )
         return True
 
-    def _add_optimization_hints(self, source, target, should_apply=True):
+    def _add_optimization_hints(self, source, target, not_applied=None, should_apply=True):
         if source:
             if not is_iterable(source):
                 source = (source,)
 
-            if should_apply:
+            if should_apply or not_applied is None:
                 if isinstance(target, dict):
                     target.update(source)
                 else:
                     target += source
+            else:
+                if isinstance(not_applied, dict):
+                    not_applied.update(source)
+                else:
+                    not_applied += source
 
     def _get_name_from_resolver(self, resolver, parent_type):
         optimization_hints = self._get_optimization_hints(resolver)
         if optimization_hints:
             name = optimization_hints.model_field
             if name:
-                return name
+                return name, optimization_hints.ignore
         if self._is_resolver_for_id_field(resolver):
             if hasattr(parent_type, 'graphene_type') and hasattr(parent_type.graphene_type._meta, 'id_field'):
-                return parent_type.graphene_type._meta.id_field
+                return parent_type.graphene_type._meta.id_field, False
 
-            return self.id_field
+            return self.id_field, False
         elif isinstance(resolver, functools.partial):
             resolver_fn = resolver
             if resolver_fn.func != default_resolver:
@@ -349,8 +357,9 @@ class QueryOptimizer(object):
                     arg = resolver_fn.args[0]
                 resolver_fn = arg
             if isinstance(resolver_fn, functools.partial) and resolver_fn.func == default_resolver:
-                return resolver_fn.args[0]
-            return resolver_fn
+                return resolver_fn.args[0], False
+            return resolver_fn, False
+        return None, False
 
     def _is_resolver_for_id_field(self, resolver):
         resolve_id = DjangoObjectType.resolve_id
@@ -412,6 +421,9 @@ class QueryOptimizerStore():
         self.annotate_dict = {}
         self.only_list = []
         self.disable_abort_only = disable_abort_only
+
+        # Store prefetches that have been saved but will not be applied.
+        self.prefetch_not_applied = []
 
     def select_related(self, name, store, model_field=None, id_field=None):
         if store.annotate_dict:
@@ -485,6 +497,7 @@ class QueryOptimizerStore():
         self.select_list += store.select_list
         self.prefetch_list += store.prefetch_list
         self.annotate_dict.update(store.annotate_dict)
+        self.prefetch_not_applied += store.prefetch_not_applied
         if self.only_list is not None:
             if store.only_list is None:
                 self.only_list = None
