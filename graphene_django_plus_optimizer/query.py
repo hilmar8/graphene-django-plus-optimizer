@@ -68,11 +68,11 @@ class QueryOptimizer(object):
             # info.parent_type,
         )
         if self.parent_id_field:
-            store.only(self.parent_id_field)
+            store.append_only(self.parent_id_field)
 
         # Allow forcing attributes in only.
         if append_only:
-            store.only_list += append_only
+            store.append_only_list += append_only
 
         return store.optimize_queryset(queryset)
 
@@ -263,8 +263,13 @@ class QueryOptimizer(object):
     def _get_optimization_hints(self, resolver):
         resolver_fn = resolver
         if isinstance(resolver, functools.partial):
-            if resolver.func == DjangoListField.list_resolver:
-                resolver_fn = resolver.args[1]
+            if resolver_fn.func != default_resolver:
+                # Some resolvers have the partial function as the second
+                # argument.
+                for arg in resolver_fn.args:
+                    if isinstance(arg, (str, functools.partial)):
+                        resolver_fn = arg
+                        break
 
         return getattr(resolver_fn, 'optimization_hints', None)
 
@@ -274,7 +279,7 @@ class QueryOptimizer(object):
             value = info.variable_values.get(var_name)
         if isinstance(value, InputObjectType):
             return value.__dict__
-        if isinstance(value, float):
+        if isinstance(value, float) or isinstance(value, str):
             return value
         else:
             return GenericScalar.parse_literal(value)
@@ -425,9 +430,12 @@ class QueryOptimizerStore():
         # Store prefetches that have been saved but will not be applied.
         self.prefetch_not_applied = []
 
+        # A list of values to force append to 'only' if only is used.
+        self.append_only_list = []
+
     def select_related(self, name, store, model_field=None, id_field=None):
         if store.annotate_dict:
-            self.only(model_field.attname)
+            self.append_only(model_field.attname)
             self.prefetch_related(name, store, model_field.related_model.objects.all(), id_field=id_field)
         else:
             if store.select_list:
@@ -449,6 +457,9 @@ class QueryOptimizerStore():
                         self.only_list.append(name + LOOKUP_SEP + id_field)
                     for only in store.only_list:
                         self.only_list.append(name + LOOKUP_SEP + only)
+                    if store.append_only_list:
+                        for append_only in store.append_only_list:
+                            self.append_only_list.append(name + LOOKUP_SEP + append_only)
 
     def prefetch_related(self, name, store, queryset, attname=None, id_field=None):
         if store.select_list or store.only_list:
@@ -473,6 +484,9 @@ class QueryOptimizerStore():
         if self.only_list is not None:
             self.only_list.append(field)
 
+    def append_only(self, field):
+        self.append_only_list.append(field)
+
     def abort_only_optimization(self, field=None):
         if not self.disable_abort_only:
             self.only_list = None
@@ -488,7 +502,9 @@ class QueryOptimizerStore():
         if self.annotate_dict:
             queryset = queryset.annotate(**self.annotate_dict)
 
-        if self.only_list:
+        if self.only_list and self.append_only_list:
+            queryset = queryset.only(*self.only_list + self.append_only_list)
+        elif self.only_list:
             queryset = queryset.only(*self.only_list)
 
         return queryset
@@ -503,7 +519,11 @@ class QueryOptimizerStore():
                 self.only_list = None
             else:
                 self.only_list += store.only_list
-
+        if self.append_only_list is not None:
+            if store.append_only_list is None:
+                self.append_only_list = None
+            else:
+                self.append_only_list += store.append_only_list
 
 # For legacy Django versions:
 def _get_path_from_parent(self, parent):
