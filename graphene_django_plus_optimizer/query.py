@@ -59,7 +59,7 @@ class QueryOptimizer(object):
         # Used if overriding resolve_id.
         self.id_field = options.get('id_field', 'id')
 
-    def optimize(self, queryset):
+    def optimize(self, queryset, append_only=None):
         info = self.root_info
         field_def = get_field_def(info.schema, info.parent_type, info.field_name)
         store = self._optimize_gql_selections(
@@ -69,6 +69,10 @@ class QueryOptimizer(object):
         )
         if self.parent_id_field:
             store.only(self.parent_id_field)
+
+        # Allow forcing attributes in only.
+        if append_only:
+            store.only_list += append_only
 
         return store.optimize_queryset(queryset)
 
@@ -297,6 +301,7 @@ class QueryOptimizer(object):
         self._add_optimization_hints(
             optimization_hints.prefetch_related(info, *args),
             store.prefetch_list,
+            optimization_hints.apply_prefetch_related,
         )
         self._add_optimization_hints(
             optimization_hints.annotate(info, *args),
@@ -309,15 +314,16 @@ class QueryOptimizer(object):
             )
         return True
 
-    def _add_optimization_hints(self, source, target):
+    def _add_optimization_hints(self, source, target, should_apply=True):
         if source:
             if not is_iterable(source):
                 source = (source,)
 
-            if isinstance(target, dict):
-                target.update(source)
-            else:
-                target += source
+            if should_apply:
+                if isinstance(target, dict):
+                    target.update(source)
+                else:
+                    target += source
 
     def _get_name_from_resolver(self, resolver, parent_type):
         optimization_hints = self._get_optimization_hints(resolver)
