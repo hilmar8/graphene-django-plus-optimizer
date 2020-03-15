@@ -11,7 +11,7 @@ from graphene.types.resolver import default_resolver
 from graphene_django import DjangoObjectType
 from graphene_django.fields import DjangoListField
 
-from graphene_django_plus.fields import DjangoListField, PlusListField, DjangoPlusListField
+from graphene_django_plus.fields import DjangoListField, PlusListField, DjangoPlusListField, PlusFilterConnectionField
 
 from graphql import ResolveInfo
 from graphql.execution.base import (
@@ -270,6 +270,8 @@ class QueryOptimizer(object):
                 resolver_fn = resolver.args[1]
             elif resolver.func == PlusListField.list_resolver:
                 resolver_fn = resolver.args[0]
+            elif resolver.func == PlusFilterConnectionField.connection_resolver:
+                resolver_fn = resolver.args[0]
 
         return getattr(resolver_fn, 'optimization_hints', None)
 
@@ -506,6 +508,8 @@ class QueryOptimizerStore():
             queryset = queryset.only(*self.only_list + self.append_only_list)
         elif self.only_list:
             queryset = queryset.only(*self.only_list)
+
+        setattr(queryset, '_gql_optimizied', self.only_list is not None)
 
         return queryset
 
