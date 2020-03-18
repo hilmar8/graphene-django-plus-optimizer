@@ -509,7 +509,7 @@ class QueryOptimizerStore():
         elif self.only_list:
             queryset = queryset.only(*self.only_list)
 
-        setattr(queryset, '_gql_optimizied', self.only_list is not None)
+        setattr(queryset, '_gql_optimized', self.only_list is not None)
 
         return queryset
 
