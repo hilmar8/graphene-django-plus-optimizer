@@ -73,6 +73,9 @@ class QueryOptimizer(object):
         if self.parent_id_field:
             store.append_only(self.parent_id_field)
 
+        if hasattr(queryset, '_gql_parent_id_field'):
+            store.append_only(getattr(queryset, '_gql_parent_id_field'))
+
         # Allow forcing attributes in only.
         if append_only:
             store.append_only_list += append_only
