@@ -284,7 +284,7 @@ class QueryOptimizer(object):
             value = info.variable_values.get(var_name)
         if isinstance(value, InputObjectType):
             return value.__dict__
-        if isinstance(value, float) or isinstance(value, str):
+        if isinstance(value, float) or isinstance(value, str) or isinstance(value, datetime.date) or isinstance(value, datetime.datetime):
             return value
         else:
             return GenericScalar.parse_literal(value)
