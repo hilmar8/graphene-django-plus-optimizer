@@ -272,6 +272,8 @@ class QueryOptimizer(object):
         if isinstance(resolver, functools.partial):
             if resolver.func == DjangoListField.list_resolver or resolver.func == DjangoPlusListField.list_resolver:
                 resolver_fn = resolver.args[1]
+            elif resolver.func == GlobalID.id_resolver and len(resolver.args) > 1:
+                resolver_fn = resolver.args[0]
             elif resolver.func == PlusListField.list_resolver:
                 resolver_fn = resolver.args[0]
             elif resolver.func == PlusFilterConnectionField.connection_resolver:
