@@ -282,6 +282,7 @@ class QueryOptimizer(object):
         if isinstance(value, Variable):
             var_name = value.name.value
             value = info.variable_values.get(var_name)
+            return value
         if isinstance(value, InputObjectType):
             return value.__dict__
         if isinstance(value, float) or isinstance(value, str):
@@ -346,9 +347,9 @@ class QueryOptimizer(object):
     def _get_name_from_resolver(self, resolver, parent_type):
         optimization_hints = self._get_optimization_hints(resolver)
         if optimization_hints:
-            name = optimization_hints.model_field
-            if name:
-                return name, optimization_hints.ignore
+            name_fn = optimization_hints.model_field
+            if name_fn:
+                return name_fn(), optimization_hints.ignore
         if self._is_resolver_for_id_field(resolver):
             if hasattr(parent_type, 'graphene_type') and hasattr(parent_type.graphene_type._meta, 'id_field'):
                 return parent_type.graphene_type._meta.id_field, False

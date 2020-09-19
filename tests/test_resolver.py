@@ -191,3 +191,24 @@ def test_should_return_valid_result_with_annotate_as_a_function(django_assert_nu
     assert not result.errors
     assert result.data['items'][0]['prefetchedChildren'][0]['nameWithPrefix'] == 'The bar'
     assert result.data['items'][0]['prefetchedChildren'][1]['nameWithPrefix'] == 'The foobar'
+
+
+@pytest.mark.django_db
+def test_should_return_valid_result_with_prefetch_related_as_a_function_using_variable():
+    parent = Item.objects.create(id=1, name='foo')
+    Item.objects.create(id=2, name='bar', parent=parent)
+    Item.objects.create(id=3, name='foobar', parent=parent)
+    result = schema.execute('''
+        query Foo ($name: String!) {
+            items(name: "foo") {
+                id
+                foo
+                filteredChildren(name: $name) {
+                    id
+                    foo
+                }
+            }
+        }
+    ''', variables={'name': 'bar'})
+    assert not result.errors
+    assert result.data['items'][0]['filteredChildren'][0]['id'] == '2'
