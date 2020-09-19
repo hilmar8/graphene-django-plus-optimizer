@@ -1,5 +1,6 @@
 import functools
 import warnings
+import datetime
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import ForeignKey, Prefetch
@@ -271,6 +272,8 @@ class QueryOptimizer(object):
         if isinstance(resolver, functools.partial):
             if resolver.func == DjangoListField.list_resolver or resolver.func == DjangoPlusListField.list_resolver:
                 resolver_fn = resolver.args[1]
+            elif resolver.func == GlobalID.id_resolver and len(resolver.args) > 1:
+                resolver_fn = resolver.args[0]
             elif resolver.func == PlusListField.list_resolver:
                 resolver_fn = resolver.args[0]
             elif resolver.func == PlusFilterConnectionField.connection_resolver:
@@ -285,7 +288,7 @@ class QueryOptimizer(object):
             return value
         if isinstance(value, InputObjectType):
             return value.__dict__
-        if isinstance(value, float) or isinstance(value, str):
+        if isinstance(value, float) or isinstance(value, str) or isinstance(value, datetime.date) or isinstance(value, datetime.datetime):
             return value
         else:
             return GenericScalar.parse_literal(value)
